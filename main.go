@@ -25,7 +25,9 @@ func NewServer(node *maelstrom.Node) *Server {
 
 	// Register the handlers
 	node.Handle("echo", s.EchoHandler)
+
 	node.Handle("generate", s.GenerateHandler)
+
 	node.Handle("broadcast", s.BroadcastHandler)
 	node.Handle("read", s.ReadHandler)
 	node.Handle("topology", s.TopologyHandler)
@@ -62,21 +64,39 @@ func (s *Server) GenerateHandler(msg maelstrom.Message) error {
 
 func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 	type Body struct {
-		TypeOf  string `json:"type"`
-		Message int    `json:"message"`
+		Message   int `json:"message"`
+		MessageID int `json:"msg_id"`
 	}
 
-	var body Body
+	body := new(Body)
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
 		return err
 	}
 
+	if _, ok := s.Seen[body.Message]; ok {
+		return nil
+	}
+
 	s.Seen[body.Message] = struct{}{}
 
-	resp_body := make(map[string]any)
-	resp_body["type"] = "broadcast_ok"
+	for _, node := range s.Topology[s.Node.ID()] {
+		if node == msg.Src {
+			continue
+		}
+		s.Node.Send(node, map[string]any{
+			"type":    "broadcast",
+			"message": body.Message,
+		})
+	}
 
-	return s.Node.Reply(msg, resp_body)
+	if body.MessageID != 0 {
+		resp_body := make(map[string]any)
+		resp_body["type"] = "broadcast_ok"
+
+		return s.Node.Reply(msg, resp_body)
+	}
+
+	return nil
 }
 
 func (s *Server) ReadHandler(msg maelstrom.Message) error {
