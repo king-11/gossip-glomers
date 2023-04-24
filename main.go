@@ -13,6 +13,7 @@ type Server struct {
 	Node     *maelstrom.Node
 	UniqueID int
 	Seen     map[int]any
+	Topology map[string][]string
 }
 
 func NewServer(node *maelstrom.Node) *Server {
@@ -93,11 +94,20 @@ func (s *Server) ReadHandler(msg maelstrom.Message) error {
 }
 
 func (s *Server) TopologyHandler(msg maelstrom.Message) error {
-	body := make(map[string]any)
+	var body struct {
+		Topology map[string][]string `json:"topology"`
+	}
 
-	body["type"] = "topology_ok"
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
 
-	return s.Node.Reply(msg, body)
+	s.Topology = body.Topology
+
+	body_send := make(map[string]any)
+	body_send["type"] = "topology_ok"
+
+	return s.Node.Reply(msg, body_send)
 }
 
 func main() {
