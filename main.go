@@ -81,7 +81,7 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 
 func (s *Server) ReadHandler(msg maelstrom.Message) error {
 	body := make(map[string]any)
-	vals := make([]int, 0)
+	vals := make([]int, 0, len(s.Seen))
 
 	for val := range s.Seen {
 		vals = append(vals, val)
@@ -104,7 +104,7 @@ func (s *Server) TopologyHandler(msg maelstrom.Message) error {
 
 	s.Topology = body.Topology
 
-	body_send := make(map[string]any)
+	body_send := make(map[string]string)
 	body_send["type"] = "topology_ok"
 
 	return s.Node.Reply(msg, body_send)
