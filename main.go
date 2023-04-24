@@ -9,80 +9,102 @@ import (
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
+type Server struct {
+	Node     *maelstrom.Node
+	UniqueID int
+	Seen     map[int]any
+}
+
+func NewServer(node *maelstrom.Node) *Server {
+	s := &Server{
+		Node:     node,
+		UniqueID: 1,
+		Seen:     make(map[int]any),
+	}
+
+	// Register the handlers
+	node.Handle("echo", s.EchoHandler)
+	node.Handle("generate", s.GenerateHandler)
+	node.Handle("broadcast", s.BroadcastHandler)
+	node.Handle("read", s.ReadHandler)
+	node.Handle("topology", s.TopologyHandler)
+
+	return s
+}
+
+func (s *Server) EchoHandler(msg maelstrom.Message) error {
+	var body map[string]any
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+
+	body["type"] = "echo_ok"
+
+	return s.Node.Reply(msg, body)
+}
+
+func (s *Server) GenerateHandler(msg maelstrom.Message) error {
+	var body map[string]any
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+
+	body["type"] = "generate_ok"
+
+	id := fmt.Sprintf("%d-%s-%s-%d", time.Now().Unix(), msg.Src, msg.Dest, s.UniqueID)
+	s.UniqueID += 1
+
+	body["id"] = id
+
+	return s.Node.Reply(msg, body)
+}
+
+func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
+	type Body struct {
+		TypeOf  string `json:"type"`
+		Message int    `json:"message"`
+	}
+
+	var body Body
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+
+	s.Seen[body.Message] = struct{}{}
+
+	resp_body := make(map[string]any)
+	resp_body["type"] = "broadcast_ok"
+
+	return s.Node.Reply(msg, resp_body)
+}
+
+func (s *Server) ReadHandler(msg maelstrom.Message) error {
+	body := make(map[string]any)
+	vals := make([]int, 0)
+
+	for val := range s.Seen {
+		vals = append(vals, val)
+	}
+
+	body["type"] = "read_ok"
+	body["messages"] = vals
+
+	return s.Node.Reply(msg, body)
+}
+
+func (s *Server) TopologyHandler(msg maelstrom.Message) error {
+	body := make(map[string]any)
+
+	body["type"] = "topology_ok"
+
+	return s.Node.Reply(msg, body)
+}
+
 func main() {
 	n := maelstrom.NewNode()
+	s := NewServer(n)
 
-	n.Handle("echo", func(msg maelstrom.Message) error {
-		var body map[string]any
-		if err := json.Unmarshal(msg.Body, &body); err != nil {
-			return err
-		}
-
-		body["type"] = "echo_ok"
-
-		return n.Reply(msg, body)
-	})
-
-	uniqueID := 1
-	n.Handle("generate", func(msg maelstrom.Message) error {
-		var body map[string]any
-		if err := json.Unmarshal(msg.Body, &body); err != nil {
-			return err
-		}
-
-		body["type"] = "generate_ok"
-
-		id := fmt.Sprintf("%d-%s-%s-%d", time.Now().Unix(), msg.Src, msg.Dest, uniqueID)
-		uniqueID += 1
-
-		body["id"] = id
-
-		return n.Reply(msg, body)
-	})
-
-	seen := make(map[int]struct{})
-	n.Handle("broadcast", func(msg maelstrom.Message) error {
-		type Body struct {
-			TypeOf  string `json:"type"`
-			Message int    `json:"message"`
-		}
-
-		var body Body
-		if err := json.Unmarshal(msg.Body, &body); err != nil {
-			return err
-		}
-
-		seen[body.Message] = struct{}{}
-
-		resp_body := make(map[string]any)
-		resp_body["type"] = "broadcast_ok"
-
-		return n.Reply(msg, resp_body)
-	})
-
-	n.Handle("read", func(msg maelstrom.Message) error {
-		body := make(map[string]any)
-		vals := make([]int, 0)
-
-		for val := range seen {
-			vals = append(vals, val)
-		}
-
-		body["type"] = "read_ok"
-		body["messages"] = vals
-
-		return n.Reply(msg, body)
-	})
-
-	n.Handle("topology", func(msg maelstrom.Message) error {
-		body := make(map[string]any)
-
-		body["type"] = "topology_ok"
-
-		return n.Reply(msg, body)
-	})
-
-	if err := n.Run(); err != nil {
+	if err := s.Node.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
