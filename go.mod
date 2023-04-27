@@ -1,4 +1,4 @@
-module maelstrom-echo
+module gossip-glomers
 
 go 1.18
 
