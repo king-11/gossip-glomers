@@ -4,23 +4,57 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
 type Server struct {
-	Node     *maelstrom.Node
-	UniqueID int
-	Seen     map[int]any
-	Topology map[string][]string
+	Node          *maelstrom.Node
+	UniqueID      int
+	Topology      map[string][]string
+	TopologyMutex *sync.RWMutex
+	seen          map[int]any
+	seenMutex     *sync.RWMutex
+}
+
+func (s *Server) checkMessage(message int) bool {
+	s.seenMutex.RLock()
+	defer s.seenMutex.RUnlock()
+
+	_, ok := s.seen[message]
+	return ok
+}
+
+func (s *Server) addMessage(message int) {
+	s.seenMutex.Lock()
+	defer s.seenMutex.Unlock()
+
+	s.seen[message] = struct{}{}
+}
+
+func (s *Server) seenNow() []int {
+	s.seenMutex.RLock()
+	defer s.seenMutex.RUnlock()
+
+	vals := make([]int, 0, len(s.seen))
+
+	for val := range s.seen {
+		vals = append(vals, val)
+	}
+
+	return vals
 }
 
 func NewServer(node *maelstrom.Node) *Server {
 	s := &Server{
-		Node:     node,
-		UniqueID: 1,
-		Seen:     make(map[int]any),
+		Node:          node,
+		UniqueID:      1,
+		Topology:      make(map[string][]string),
+		TopologyMutex: &sync.RWMutex{},
+		seen:          make(map[int]any),
+		seenMutex:     &sync.RWMutex{},
 	}
 
 	// Register the handlers
@@ -73,13 +107,15 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 		return err
 	}
 
-	if _, ok := s.Seen[body.Message]; ok {
+	if s.checkMessage(body.Message) {
 		return nil
 	}
 
-	s.Seen[body.Message] = struct{}{}
+	s.addMessage(body.Message)
 
-	for _, node := range s.Node.NodeIDs() {
+	s.TopologyMutex.RLock()
+	defer s.TopologyMutex.RUnlock()
+	for _, node := range s.Topology[s.Node.ID()] {
 		if node == msg.Src {
 			continue
 		}
@@ -101,11 +137,8 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 
 func (s *Server) ReadHandler(msg maelstrom.Message) error {
 	body := make(map[string]any)
-	vals := make([]int, 0, len(s.Seen))
 
-	for val := range s.Seen {
-		vals = append(vals, val)
-	}
+	vals := s.seenNow()
 
 	body["type"] = "read_ok"
 	body["messages"] = vals
@@ -122,6 +155,8 @@ func (s *Server) TopologyHandler(msg maelstrom.Message) error {
 		return err
 	}
 
+	s.TopologyMutex.Lock()
+	defer s.TopologyMutex.Unlock()
 	s.Topology = body.Topology
 
 	body_send := make(map[string]string)
