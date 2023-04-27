@@ -79,7 +79,7 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 
 	s.Seen[body.Message] = struct{}{}
 
-	for _, node := range s.Topology[s.Node.ID()] {
+	for _, node := range s.Node.NodeIDs() {
 		if node == msg.Src {
 			continue
 		}
