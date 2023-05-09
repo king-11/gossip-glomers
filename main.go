@@ -8,6 +8,7 @@ import (
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
+	"golang.org/x/exp/maps"
 )
 
 type Server struct {
@@ -38,13 +39,14 @@ func (s *Server) seenNow() []int {
 	s.seenMutex.RLock()
 	defer s.seenMutex.RUnlock()
 
-	vals := make([]int, 0, len(s.seen))
+	return maps.Keys(s.seen)
+}
 
-	for val := range s.seen {
-		vals = append(vals, val)
-	}
+func (s *Server) neighbours() []string {
+	s.TopologyMutex.RLock()
+	defer s.TopologyMutex.RUnlock()
 
-	return vals
+	return s.Topology[s.Node.ID()]
 }
 
 func NewServer(node *maelstrom.Node) *Server {
@@ -107,22 +109,25 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 		return err
 	}
 
-	if s.checkMessage(body.Message) {
-		return nil
-	}
+	if !s.checkMessage(body.Message) {
+		s.addMessage(body.Message)
+		neighours := s.neighbours()
+		wg := &sync.WaitGroup{}
+		for _, node := range neighours {
+			if node == msg.Src {
+				continue
+			}
 
-	s.addMessage(body.Message)
-
-	s.TopologyMutex.RLock()
-	defer s.TopologyMutex.RUnlock()
-	for _, node := range s.Topology[s.Node.ID()] {
-		if node == msg.Src {
-			continue
+			wg.Add(1)
+			go func(dest string, wg *sync.WaitGroup) {
+				s.Node.Send(dest, map[string]any{
+					"type":    "broadcast",
+					"message": body.Message,
+				})
+				wg.Done()
+			}(node, wg)
 		}
-		s.Node.Send(node, map[string]any{
-			"type":    "broadcast",
-			"message": body.Message,
-		})
+		wg.Wait()
 	}
 
 	if body.MessageID != 0 {
