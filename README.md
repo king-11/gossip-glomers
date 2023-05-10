@@ -19,8 +19,8 @@ Even the best developers in the world can be brought to their knees in the face 
 |[2](https://fly.io/dist-sys/2/) |Unique ID Generation |🌟 |
 |[3a](https://fly.io/dist-sys/3a/) |Single-Node Broadcast |🌟 |
 |[3b](https://fly.io/dist-sys/3b/) |Multi-Node Broadcast |🌟 |
-|[3c](https://fly.io/dist-sys/3c/) |Fault Tolerant Broadcast | |
-|[3d](https://fly.io/dist-sys/3d/) |Efficient Broadcast, Part I | |
+|[3c](https://fly.io/dist-sys/3c/) |Fault Tolerant Broadcast |🌟 |
+|[3d](https://fly.io/dist-sys/3d/) |Efficient Broadcast, Part I |🌟 |
 |[3e](https://fly.io/dist-sys/3e/) |Efficient Broadcast, Part II | |
 |[4](https://fly.io/dist-sys/4/) |Grow-Only Counter | |
 |[5a](https://fly.io/dist-sys/5a/) |Single-Node Kafka-Style Log | |
