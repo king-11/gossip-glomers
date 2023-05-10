@@ -127,10 +127,10 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 		return err
 	}
 
+	wg := &sync.WaitGroup{}
 	if !s.checkMessage(body.Message) {
 		s.addMessage(body.Message)
 		neighours := s.neighbours()
-		wg := &sync.WaitGroup{}
 		for _, node := range neighours {
 			if node == msg.Src {
 				continue
@@ -145,17 +145,24 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 				wg.Done()
 			}(node, wg)
 		}
-		wg.Wait()
 	}
 
-	nn := s.notNeighbours()
-	randNode := nn[rand.Intn(len(nn))]
-	go func(dest string, messages []int) {
-		s.Node.Send(dest, map[string]any{
-			"type":    "gossip",
-			"message": messages,
-		})
-	}(randNode, s.seenNow())
+	curTime := time.Now().Second()
+	if curTime % 7 == 0 {
+		nn := s.notNeighbours()
+		randNode := nn[rand.Intn(len(nn))]
+
+		wg.Add(1)
+		go func(dest string, messages []int, wg *sync.WaitGroup) {
+			s.Node.Send(dest, map[string]any{
+				"type":    "gossip",
+				"message": messages,
+			})
+			wg.Done()
+		}(randNode, s.seenNow(), wg)
+	}
+
+	wg.Wait()
 
 	if body.MessageID != 0 {
 		resp_body := make(map[string]any)
@@ -199,7 +206,7 @@ func (s *Server) TopologyHandler(msg maelstrom.Message) error {
 
 func (s *Server) GossipHandler(msg maelstrom.Message) error {
 	type Body struct {
-		Message   []int `json:"message"`
+		Message []int `json:"message"`
 	}
 
 	body := new(Body)
