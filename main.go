@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 type Server struct {
@@ -49,6 +51,19 @@ func (s *Server) neighbours() []string {
 	return s.Topology[s.Node.ID()]
 }
 
+func (s *Server) notNeighbours() []string {
+	n := s.neighbours()
+	slices.Sort(n)
+	nn := make([]string, 0, len(s.Node.NodeIDs()))
+	for _, node := range s.Node.NodeIDs() {
+		if _, found := slices.BinarySearch(n, node); !found && node != s.Node.ID() {
+			nn = append(nn, node)
+		}
+	}
+
+	return nn
+}
+
 func NewServer(node *maelstrom.Node) *Server {
 	s := &Server{
 		Node:          node,
@@ -59,6 +74,8 @@ func NewServer(node *maelstrom.Node) *Server {
 		seenMutex:     &sync.RWMutex{},
 	}
 
+	rand.Seed(time.Now().Unix())
+
 	// Register the handlers
 	node.Handle("echo", s.EchoHandler)
 
@@ -67,6 +84,7 @@ func NewServer(node *maelstrom.Node) *Server {
 	node.Handle("broadcast", s.BroadcastHandler)
 	node.Handle("read", s.ReadHandler)
 	node.Handle("topology", s.TopologyHandler)
+	node.Handle("gossip", s.GossipHandler)
 
 	return s
 }
@@ -130,6 +148,15 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 		wg.Wait()
 	}
 
+	nn := s.notNeighbours()
+	randNode := nn[rand.Intn(len(nn))]
+	go func(dest string, messages []int) {
+		s.Node.Send(dest, map[string]any{
+			"type":    "gossip",
+			"message": messages,
+		})
+	}(randNode, s.seenNow())
+
 	if body.MessageID != 0 {
 		resp_body := make(map[string]any)
 		resp_body["type"] = "broadcast_ok"
@@ -168,6 +195,48 @@ func (s *Server) TopologyHandler(msg maelstrom.Message) error {
 	body_send["type"] = "topology_ok"
 
 	return s.Node.Reply(msg, body_send)
+}
+
+func (s *Server) GossipHandler(msg maelstrom.Message) error {
+	type Body struct {
+		Message   []int `json:"message"`
+	}
+
+	body := new(Body)
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+
+	notFound := make([]int, 0, len(body.Message))
+	for _, val := range body.Message {
+		if !s.checkMessage(val) {
+			s.addMessage(val)
+			notFound = append(notFound, val)
+		}
+	}
+
+	if len(notFound) == 0 {
+		return nil
+	}
+
+	wg := &sync.WaitGroup{}
+	for _, node := range s.neighbours() {
+		if node == msg.Src {
+			continue
+		}
+
+		wg.Add(1)
+		go func(dest string, wg *sync.WaitGroup) {
+			s.Node.Send(dest, map[string]any{
+				"type":    "gossip",
+				"message": notFound,
+			})
+			wg.Done()
+		}(node, wg)
+	}
+	wg.Wait()
+
+	return nil
 }
 
 func main() {
