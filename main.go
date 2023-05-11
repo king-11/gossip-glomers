@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 
 type Server struct {
 	Node          *maelstrom.Node
+	KV            *maelstrom.KV
 	UniqueID      int
 	Topology      map[string][]string
 	TopologyMutex *sync.RWMutex
@@ -64,9 +66,41 @@ func (s *Server) notNeighbours() []string {
 	return nn
 }
 
-func NewServer(node *maelstrom.Node) *Server {
+func (s *Server) incrementCounter(delta int) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	val, err := s.KV.ReadInt(ctx, "read")
+	if err != nil {
+		val = 0
+	}
+
+	err = s.KV.CompareAndSwap(ctx, "read", val, val + delta, true)
+	if err != nil {
+		for {
+			val, _ := s.KV.ReadInt(ctx, "read")
+			err = s.KV.CompareAndSwap(ctx, "read", val, val + delta, true)
+			if err == nil {
+				break
+			}
+		}
+	}
+}
+
+func (s *Server) getCounter() int {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	val, err := s.KV.ReadInt(ctx, "read")
+	if err != nil {
+		val = 0
+	}
+	return val
+}
+
+func NewServer(node *maelstrom.Node, kv *maelstrom.KV) *Server {
 	s := &Server{
 		Node:          node,
+		KV:            kv,
 		UniqueID:      1,
 		Topology:      make(map[string][]string),
 		TopologyMutex: &sync.RWMutex{},
@@ -82,9 +116,12 @@ func NewServer(node *maelstrom.Node) *Server {
 	node.Handle("generate", s.GenerateHandler)
 
 	node.Handle("broadcast", s.BroadcastHandler)
-	node.Handle("read", s.ReadHandler)
+	// node.Handle("read", s.ReadBroadcastHandler)
 	node.Handle("topology", s.TopologyHandler)
 	node.Handle("gossip", s.GossipHandler)
+
+	node.Handle("add", s.AddHandler)
+	node.Handle("read", s.ReadCounterHandler)
 
 	return s
 }
@@ -148,7 +185,7 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 	}
 
 	curTime := time.Now().Second()
-	if curTime % 7 == 0 {
+	if curTime%7 == 0 {
 		nn := s.notNeighbours()
 		randNode := nn[rand.Intn(len(nn))]
 
@@ -174,7 +211,7 @@ func (s *Server) BroadcastHandler(msg maelstrom.Message) error {
 	return nil
 }
 
-func (s *Server) ReadHandler(msg maelstrom.Message) error {
+func (s *Server) ReadBroadcastHandler(msg maelstrom.Message) error {
 	body := make(map[string]any)
 
 	vals := s.seenNow()
@@ -246,9 +283,44 @@ func (s *Server) GossipHandler(msg maelstrom.Message) error {
 	return nil
 }
 
+func (s *Server) AddHandler(msg maelstrom.Message) error {
+	type Body struct {
+		MessageType string `json:"type"`
+		Delta       int    `json:"delta"`
+	}
+
+	body := new(Body)
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+
+	s.incrementCounter(body.Delta)
+
+	return s.Node.Reply(msg, map[string]string{
+		"type": "add_ok",
+	})
+}
+
+func (s *Server) ReadCounterHandler(msg maelstrom.Message) error {
+	type Body struct {
+		MessageType string `json:"type"`
+	}
+
+	body := new(Body)
+	if err := json.Unmarshal(msg.Body, &body); err != nil {
+		return err
+	}
+
+	return s.Node.Reply(msg, map[string]any{
+		"type":  "read_ok",
+		"value": s.getCounter(),
+	})
+}
+
 func main() {
 	n := maelstrom.NewNode()
-	s := NewServer(n)
+	kv := maelstrom.NewSeqKV(n)
+	s := NewServer(n, kv)
 
 	if err := s.Node.Run(); err != nil {
 		log.Fatal(err)
