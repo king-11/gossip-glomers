@@ -1,8 +1,10 @@
 package broadcast
 
 import (
+	"context"
+	"log"
 	"math/rand"
-	"slices"
+	"os"
 	"sync"
 	"time"
 
@@ -10,25 +12,43 @@ import (
 )
 
 type BroadcastServer struct {
-	n *maelstrom.Node
-	messages []int
-	neighbours []string
-	passingChannel chan int
+	n              *maelstrom.Node
+	messages       *sync.Map
+	neighbours     []string
+	passingChannel chan struct {
+		int
+		string
+	}
 	gossipTicker *time.Ticker
 }
 
-func NewBroadcastServer(n *maelstrom.Node) BroadcastServer {
+func NewBroadcastServer(n *maelstrom.Node, tickDuration time.Duration) BroadcastServer {
+	log.SetOutput(os.Stderr)
 	return BroadcastServer{
-		n: n,
-		messages: make([]int, 0, 10),
-		neighbours: make([]string, 0, 5),
-		passingChannel: make(chan int, 200),
-		gossipTicker: time.NewTicker(time.Second * 5),
+		n:          n,
+		messages:   &sync.Map{},
+		neighbours: make([]string, 0),
+		passingChannel: make(chan struct {
+			int
+			string
+		}, 200),
+		gossipTicker: time.NewTicker(tickDuration),
 	}
 }
 
+func (s *BroadcastServer) getMessages() []int {
+	stored_messages := make([]int, 0)
+	s.messages.Range(func(key, value any) bool {
+		if intKey, ok := key.(int); ok {
+			stored_messages = append(stored_messages, intKey)
+		}
+		return true
+	})
+	return stored_messages
+}
+
 func (s *BroadcastServer) Read(msg *ReadMessage) ReadMessageReply {
-	return msg.Reply(s.messages)
+	return msg.Reply(s.getMessages())
 }
 
 func (s *BroadcastServer) Broadcast(msg *BroadcastMessage, src string) (BroadcastMessageReply, bool) {
@@ -37,55 +57,89 @@ func (s *BroadcastServer) Broadcast(msg *BroadcastMessage, src string) (Broadcas
 		replyBack = false
 	}
 
-	if slices.Index(s.messages, msg.Message) != -1 {
+	if _, found := s.messages.LoadOrStore(msg.Message, struct{}{}); found {
+		log.Printf("message already present %d", msg.Message)
 		return msg.Reply(), replyBack
 	}
 
-	s.messages = append(s.messages, msg.Message)
-	s.passingChannel <- msg.Message
+	log.Printf("%s: broadcasting message %d", s.n.ID(), msg.Message)
+	s.passingChannel <- struct {
+		int
+		string
+	}{msg.Message, src}
 
 	return msg.Reply(), replyBack
 }
 
-func (s *BroadcastServer) sendAllMessagesToDestination(destination string) {
-	for _, message := range s.messages {
-		s.n.Send(destination, BroadcastMessage { MessageType: "broadcast", Message: message })
+func (s *BroadcastServer) Topology(msg *TopologyMessage) TopologyMessageReply {
+	topology := msg.Topology
+	if val, contains := topology[s.n.ID()]; contains {
+		s.neighbours = val
+	}
+
+	return msg.Reply()
+}
+
+func (s *BroadcastServer) Gossip(messages []int, source string) {
+	for _, message := range messages {
+		if _, ok := s.messages.LoadOrStore(message, struct{}{}); ok {
+			continue
+		}
+
+		log.Printf("%s: found new message %d from %s", s.n.ID(), message, source)
+		s.passingChannel <- struct {
+			int
+			string
+		}{message, source}
 	}
 }
 
-func (s *BroadcastServer) Gossiper() {
-	nonNeighbours := make([]string, 0, len(s.n.NodeIDs()))
+func (s *BroadcastServer) getRandomNodes(count int) []string {
+	nodes := s.n.NodeIDs()
+	rand.Shuffle(len(nodes), func(i, j int) {
+		nodes[i], nodes[j] = nodes[j], nodes[i]
+	})
+
+	if count > len(nodes) {
+		return nodes
+	}
+
+	return nodes[:count]
+}
+
+func (s *BroadcastServer) Gossiper(ctx context.Context, randomNodes int) {
 	for {
-		if len(s.neighbours) != 0 {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.gossipTicker.C:
+			{
+				randomNodes := s.getRandomNodes(randomNodes)
+				messages := s.getMessages()
+				for _, randomNode := range randomNodes {
+					if randomNode == s.n.ID() {
+						continue
+					}
+
+					s.n.Send(randomNode, GossipMessage{MessageType: "gossip", Messages: messages})
+				}
+			}
 		}
-
-		time.Sleep(time.Second * 1)
-	}
-
-	for _, node := range s.n.NodeIDs() {
-		if slices.Index(s.neighbours, node) == -1 {
-			nonNeighbours = append(nonNeighbours, node)
-		}
-	}
-
-	if len(nonNeighbours) == 0 {
-		return
-	}
-
-	for range s.gossipTicker.C {
-		randomNode := nonNeighbours[rand.Intn(len(nonNeighbours))]
-		s.sendAllMessagesToDestination(randomNode)
 	}
 }
 
-func (s *BroadcastServer) SendToNeighbours() {
+func (s *BroadcastServer) SendToNeighbours(context context.Context) {
 	for message := range s.passingChannel {
 		wg := &sync.WaitGroup{}
 		for _, node := range s.neighbours {
+			if node == message.string {
+				continue
+			}
+
 			wg.Add(1)
 			go func(node string, wg *sync.WaitGroup) {
-				s.n.Send(node, BroadcastMessage { MessageType: "broadcast", Message: message})
+				s.n.Send(node, BroadcastMessage{MessageType: "broadcast", Message: message.int})
+				log.Printf("%s: sent %d to %s", s.n.ID(), message.int, node)
 				wg.Done()
 			}(node, wg)
 		}
@@ -96,13 +150,4 @@ func (s *BroadcastServer) SendToNeighbours() {
 func (s *BroadcastServer) Stop() {
 	close(s.passingChannel)
 	s.gossipTicker.Stop()
-}
-
-func (s *BroadcastServer) Topology(msg *TopologyMessage) TopologyMessageReply {
-	topology := msg.Topology
-	if val, contains := topology[s.n.ID()]; contains {
-		s.neighbours = val
-	}
-
-	return msg.Reply()
 }

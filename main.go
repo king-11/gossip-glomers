@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"gossip-glomers/broadcast"
 	"gossip-glomers/echo"
 	uniqueidgeneration "gossip-glomers/unique-id-generation"
 	"log"
+	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
+)
+
+const (
+	GOSSIP_FREQUENCY   = 2 * time.Second
+	GOSSIP_NODES_COUNT = 10
 )
 
 func main() {
@@ -22,7 +29,7 @@ func main() {
 		return s.HandleMessage(msg)
 	})
 
-	b := broadcast.NewBroadcastServer(n)
+	b := broadcast.NewBroadcastServer(n, GOSSIP_FREQUENCY)
 	n.Handle("read", func(msg maelstrom.Message) error {
 		body := new(broadcast.ReadMessage)
 		if err := json.Unmarshal(msg.Body, body); err != nil {
@@ -54,9 +61,21 @@ func main() {
 		return n.Reply(msg, reply)
 	})
 
-	go b.SendToNeighbours()
-	go b.Gossiper()
+	n.Handle("gossip", func(msg maelstrom.Message) error {
+		body := new(broadcast.GossipMessage)
+		if err := json.Unmarshal(msg.Body, body); err != nil {
+			return err
+		}
+
+		b.Gossip(body.Messages, msg.Src)
+		return nil
+	})
+
+	context, cancelContext := context.WithCancel(context.Background())
+	go b.SendToNeighbours(context)
+	go b.Gossiper(context, GOSSIP_NODES_COUNT)
 	defer b.Stop()
+	defer cancelContext()
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
 	}

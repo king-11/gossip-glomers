@@ -6,19 +6,19 @@ type ReadMessage struct {
 
 type ReadMessageReply struct {
 	MessageType string `json:"type"`
-	Messages []int `json:"messages"`
+	Messages    []int  `json:"messages"`
 }
 
 func (m *ReadMessage) Reply(messages []int) ReadMessageReply {
 	return ReadMessageReply{
 		MessageType: "read_ok",
-		Messages: messages,
+		Messages:    messages,
 	}
 }
 
 type TopologyMessage struct {
-	MessageType string `json:"type"`
-	Topology map[string][]string `json:"topology"`
+	MessageType string              `json:"type"`
+	Topology    map[string][]string `json:"topology"`
 }
 
 type TopologyMessageReply struct {
@@ -33,8 +33,8 @@ func (m *TopologyMessage) Reply() TopologyMessageReply {
 
 type BroadcastMessage struct {
 	MessageType string `json:"type"`
-	Message int `json:"message"`
-	MessageID int `json:"msg_id"`
+	Message     int    `json:"message"`
+	MessageID   int    `json:"msg_id"`
 }
 
 type BroadcastMessageReply struct {
@@ -45,4 +45,10 @@ func (m *BroadcastMessage) Reply() BroadcastMessageReply {
 	return BroadcastMessageReply{
 		MessageType: "broadcast_ok",
 	}
+}
+
+type GossipMessage struct {
+	MessageType string `json:"type"`
+	Messages    []int  `json:"messages"`
+	MessageID   int    `json:"msg_id"`
 }
