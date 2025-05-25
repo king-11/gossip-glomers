@@ -11,16 +11,16 @@ import (
 )
 
 type UniqueIdServer struct {
-	n *maelstrom.Node
+	n       *maelstrom.Node
 	counter uint16
-	mutex *sync.Mutex
+	mutex   *sync.Mutex
 }
 
 func NewUniqueIdServer(n *maelstrom.Node) UniqueIdServer {
 	return UniqueIdServer{
-		n: n,
+		n:       n,
 		counter: 0,
-		mutex: &sync.Mutex{},
+		mutex:   &sync.Mutex{},
 	}
 }
 
@@ -53,5 +53,5 @@ func (s *UniqueIdServer) GenerateUniqueId(src string, dest string) (uint64, erro
 		return 0, err
 	}
 
-	return uint64(s.counter) << 48 | uint64(srcInt) << 40 | uint64(destInt) << 32 | epoch, nil
+	return epoch<<32 | uint64(srcInt)<<24 | uint64(destInt)<<16 | uint64(s.counter), nil
 }
