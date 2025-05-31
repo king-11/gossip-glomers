@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	GOSSIP_FREQUENCY   = 2 * time.Second
-	GOSSIP_NODES_COUNT = 10
+	GOSSIP_FREQUENCY     = 2 * time.Second
+	NEIGHBOURS_FREQUENCY = 50 * time.Millisecond
+	GOSSIP_NODES_COUNT   = 10
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 		return s.HandleMessage(msg)
 	})
 
-	b := broadcast.NewBroadcastServer(n, GOSSIP_FREQUENCY)
+	b := broadcast.NewBroadcastServer(n, GOSSIP_FREQUENCY, NEIGHBOURS_FREQUENCY)
 	n.Handle("read", func(msg maelstrom.Message) error {
 		body := new(broadcast.ReadMessage)
 		if err := json.Unmarshal(msg.Body, body); err != nil {

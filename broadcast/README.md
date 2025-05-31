@@ -23,8 +23,10 @@ The Broadcast Server is a distributed system component that implements a gossip 
    - When the server is stopped, the context is canceled, ensuring that all goroutines exit gracefully.
    - This prevents goroutines from being blocked indefinitely on I/O operations, especially when a `SIGTERM` signal is received.
 
-5. **Channel Management**:
+5. **Message Batching**:
    - The server uses a buffered channel (`passingChannel`) to queue messages for broadcasting to neighbors.
+   - Messages are accumulated in a batch and sent to all neighbors at each tick, rather than sending immediately on arrival.
+   - This batching is handled in the `SendToNeighbours` function, which locks the batch, sends it, and then clears it for the next interval.
    - Before accessing the channel, the implementation checks whether the channel is closed to avoid blocking goroutines.
 
 ## Implementation Details
@@ -51,7 +53,7 @@ The Broadcast Server is a distributed system component that implements a gossip 
 
 ### Channel Management and Efficient Goroutine Usage
 - The `passingChannel` is a buffered channel used to queue messages for broadcasting to neighbors. This ensures that messages are processed asynchronously without blocking the main execution flow.
-- The `SendToNeighbours` function consumes messages from the `passingChannel` and efficiently uses goroutines to broadcast each message to all neighbors except the source node. A `sync.WaitGroup` is used to wait for all goroutines to complete before processing the next message.
+- The `SendToNeighbours` function consumes messages from the `passingChannel`, batches them, and efficiently uses goroutines to broadcast each batch to all neighbors except the source node. A `sync.WaitGroup` is used to wait for all goroutines to complete before processing the next batch.
 - The `passingChannel` is closed when the server stops. Before sending or receiving from the channel, the implementation checks whether the channel is closed to avoid blocking operations.
 
 ## Learnings
@@ -63,9 +65,12 @@ For the gossip ticker management, calling a stop on ticker doesn't close the cha
 
 In topology, we initially tried using circular with front, back and an opposite in the circle node as neighbours but that didn't work out well and had increased tail latency in some cases. Switching to tree like structure gave things more than I expected probably due to *logarithmic* complexity of a tree in passing around the message whereas circular was *linear*.
 
+We started batching messages together when sending to neibhours instead of sending a broadcast message for each new message that a node receives. This reduces the number of total messages sent over the network but a huge margin. We can adjust the frequency when we send messages to neighbours an alternate approach can be to check the size of batch and then send.
+
 ## Configuration
-- **Gossip Frequency**: Modify the `GOSSIP_FREQUENCY` constant in `main.go` to change how often gossiping occurs.
-- **Number of Nodes to Gossip To**: Modify the `GOSSIP_NODES_COUNT` constant in `main.go` to change the number of nodes selected for gossiping.
+- **Neighbor Gossip Frequency:** Modify the `neighboursTickDuration` parameter to change how often batches are sent to neighbors.
+- **Random-Node Gossip Frequency:** Modify the `gossipTickDuration` parameter to change how often the full message set is gossiped to random nodes.
+- **Number of Nodes to Gossip To:** Adjust the random node count parameter in `main.go` to change the number of nodes selected for random gossiping.
 
 ## Stopping the Server
 - The `Stop` method ensures that all resources are cleaned up:
@@ -73,4 +78,4 @@ In topology, we initially tried using circular with front, back and an opposite 
   - Stops the gossip ticker.
   - Cancels the context to terminate all goroutines.
 
-This implementation ensures a robust and efficient broadcast server that handles concurrency and resource management effectively.
+This implementation ensures a robust and efficient broadcast server that handles concurrency and resource management effectively, with optimized batching for neighbor gossip and periodic global dissemination via random-node gossip.

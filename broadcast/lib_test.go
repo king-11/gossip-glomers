@@ -9,7 +9,7 @@ import (
 
 func TestRead(t *testing.T) {
 	n := maelstrom.NewNode()
-	server := NewBroadcastServer(n, time.Second)
+	server := NewBroadcastServer(n, time.Second, time.Second)
 	server.messages.Store(20, struct{}{})
 	readMessage := ReadMessage{MessageType: "read"}
 
@@ -22,7 +22,7 @@ func TestRead(t *testing.T) {
 
 func TestBroadcastNewMessage(t *testing.T) {
 	n := maelstrom.NewNode()
-	server := NewBroadcastServer(n, time.Second)
+	server := NewBroadcastServer(n, time.Second, time.Second)
 	broadcastMessage := BroadcastMessage{MessageType: "broadcast", Message: 1000, MessageID: 1}
 
 	broadcastReply, replyBack := server.Broadcast(&broadcastMessage, "c2")
@@ -51,7 +51,7 @@ func TestBroadcastNewMessage(t *testing.T) {
 
 func TestBroadcastDuplicateMessage(t *testing.T) {
 	n := maelstrom.NewNode()
-	server := NewBroadcastServer(n, time.Second)
+	server := NewBroadcastServer(n, time.Second, time.Second)
 	server.messages.Store(1000, struct{}{})
 	broadcastMessage := BroadcastMessage{MessageType: "broadcast", Message: 1000}
 
@@ -74,7 +74,7 @@ func TestBroadcastDuplicateMessage(t *testing.T) {
 
 func TestTopology(t *testing.T) {
 	n := maelstrom.NewNode()
-	server := NewBroadcastServer(n, time.Second)
+	server := NewBroadcastServer(n, time.Second, time.Second)
 	topologyMessage := TopologyMessage{MessageType: "topology", Topology: map[string][]string{"n1": {"n2", "n3"}, "": {"n1"}}}
 
 	toplogyReply := server.Topology(&topologyMessage)

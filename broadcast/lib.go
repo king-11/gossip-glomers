@@ -21,10 +21,11 @@ type BroadcastServer struct {
 		int
 		string
 	}
-	gossipTicker *time.Ticker
+	gossipTickDuration     time.Duration
+	neighboursTickDuration time.Duration
 }
 
-func NewBroadcastServer(n *maelstrom.Node, tickDuration time.Duration) BroadcastServer {
+func NewBroadcastServer(n *maelstrom.Node, gossipTickDuration time.Duration, neighboursTickDuration time.Duration) BroadcastServer {
 	log.SetOutput(os.Stderr)
 	return BroadcastServer{
 		n:          n,
@@ -34,7 +35,8 @@ func NewBroadcastServer(n *maelstrom.Node, tickDuration time.Duration) Broadcast
 			int
 			string
 		}, 200),
-		gossipTicker: time.NewTicker(tickDuration),
+		gossipTickDuration:     gossipTickDuration,
+		neighboursTickDuration: neighboursTickDuration,
 	}
 }
 
@@ -64,7 +66,6 @@ func (s *BroadcastServer) Broadcast(msg *BroadcastMessage, src string) (Broadcas
 		return msg.Reply(), replyBack
 	}
 
-	log.Printf("%s: broadcasting message %d", s.n.ID(), msg.Message)
 	s.passingChannel <- struct {
 		int
 		string
@@ -128,11 +129,13 @@ func (s *BroadcastServer) getRandomNodes(count int) []string {
 }
 
 func (s *BroadcastServer) Gossiper(ctx context.Context, randomNodes int) {
+	gossipTicker := time.NewTicker(s.gossipTickDuration)
+	defer gossipTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-s.gossipTicker.C:
+			break
+		case <-gossipTicker.C:
 			{
 				randomNodes := s.getRandomNodes(randomNodes)
 				messages := s.getMessages()
@@ -149,25 +152,42 @@ func (s *BroadcastServer) Gossiper(ctx context.Context, randomNodes int) {
 }
 
 func (s *BroadcastServer) SendToNeighbours(context context.Context) {
-	for message := range s.passingChannel {
-		wg := &sync.WaitGroup{}
-		for _, node := range s.neighbours {
-			if node == message.string {
-				continue
-			}
+	neighboursTicker := time.NewTicker(s.neighboursTickDuration)
+	defer neighboursTicker.Stop()
 
-			wg.Add(1)
-			go func(node string, wg *sync.WaitGroup) {
-				s.n.Send(node, BroadcastMessage{MessageType: "broadcast", Message: message.int})
-				log.Printf("%s: sent %d to %s", s.n.ID(), message.int, node)
-				wg.Done()
-			}(node, wg)
+	messageBatch := make([]int, 0, 10)
+	messageBatchLock := &sync.Mutex{}
+
+	for {
+		select {
+		case <-context.Done():
+			break
+		case message, ok := <-s.passingChannel:
+			if !ok {
+				break
+			}
+			messageBatchLock.Lock()
+			messageBatch = append(messageBatch, message.int)
+			log.Printf("%s: received message %d from %s", s.n.ID(), message.int, message.string)
+			messageBatchLock.Unlock()
+		case <-neighboursTicker.C:
+			wg := &sync.WaitGroup{}
+			messageBatchLock.Lock()
+			for _, node := range s.neighbours {
+				wg.Add(1)
+				go func(node string, wg *sync.WaitGroup, messages []int) {
+					s.n.Send(node, GossipMessage{MessageType: "gossip", Messages: messages})
+					log.Printf("%s: sent a total of %d messages to %s", s.n.ID(), len(messages), node)
+					wg.Done()
+				}(node, wg, messageBatch)
+				wg.Wait()
+			}
+			messageBatch = make([]int, 0, 10)
+			messageBatchLock.Unlock()
 		}
-		wg.Wait()
 	}
 }
 
 func (s *BroadcastServer) Stop() {
 	close(s.passingChannel)
-	s.gossipTicker.Stop()
 }
