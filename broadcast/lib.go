@@ -5,6 +5,8 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,12 +73,30 @@ func (s *BroadcastServer) Broadcast(msg *BroadcastMessage, src string) (Broadcas
 	return msg.Reply(), replyBack
 }
 
-func (s *BroadcastServer) Topology(msg *TopologyMessage) TopologyMessageReply {
-	topology := msg.Topology
-	if val, contains := topology[s.n.ID()]; contains {
-		s.neighbours = val
+func (s *BroadcastServer) getNeighbours() []string {
+	nodeIDStr := s.n.ID()
+	if !strings.HasPrefix(nodeIDStr, "n") {
+		log.Printf("Error: Node ID %s does not have 'n' prefix", nodeIDStr)
+		return []string{}
 	}
 
+	idPart := strings.TrimPrefix(nodeIDStr, "n")
+	nodeNum, err := strconv.Atoi(idPart)
+	if err != nil {
+		log.Printf("Error converting node ID %s to int: %v", idPart, err)
+		return []string{}
+	}
+
+	totalNodes := len(s.n.NodeIDs())
+	child1 := (2 * nodeNum) % totalNodes
+	child2 := (2*nodeNum + 1) % totalNodes
+	neighbours := []string{"n" + strconv.Itoa(child1), "n" + strconv.Itoa(child2)}
+	log.Printf("Node %s, calculated neighbours: %v", nodeIDStr, neighbours)
+	return neighbours
+}
+
+func (s *BroadcastServer) Topology(msg *TopologyMessage) TopologyMessageReply {
+	s.neighbours = s.getNeighbours()
 	return msg.Reply()
 }
 
