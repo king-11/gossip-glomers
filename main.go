@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"gossip-glomers/broadcast"
 	"gossip-glomers/echo"
+	growonlycounter "gossip-glomers/grow-only-counter"
 	uniqueidgeneration "gossip-glomers/unique-id-generation"
 	"log"
 	"time"
@@ -30,6 +31,36 @@ func main() {
 		return s.HandleMessage(msg)
 	})
 
+	ctx, cancelContext := context.WithCancel(context.Background())
+	defer cancelContext()
+	// b := BroadCastServerSetup(n, ctx)
+	// defer b.Stop()
+
+	gocs := growonlycounter.NewGrowOnlyCounterServer(n)
+	n.Handle("read", func(msg maelstrom.Message) error {
+		readMessage := new(growonlycounter.ReadMessage)
+		if err := json.Unmarshal(msg.Body, readMessage); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, gocs.Read(readMessage, ctx))
+	})
+
+	n.Handle("add", func(msg maelstrom.Message) error {
+		addMessage := new(growonlycounter.AddMessage)
+		if err := json.Unmarshal(msg.Body, addMessage); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, gocs.Add(addMessage, ctx))
+	})
+
+	if err := n.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func BroadCastServerSetup(n *maelstrom.Node, ctx context.Context) broadcast.BroadcastServer {
 	b := broadcast.NewBroadcastServer(n, GOSSIP_FREQUENCY, NEIGHBOURS_FREQUENCY)
 	n.Handle("read", func(msg maelstrom.Message) error {
 		body := new(broadcast.ReadMessage)
@@ -72,12 +103,8 @@ func main() {
 		return nil
 	})
 
-	context, cancelContext := context.WithCancel(context.Background())
-	go b.SendToNeighbours(context)
-	go b.Gossiper(context, GOSSIP_NODES_COUNT)
-	defer b.Stop()
-	defer cancelContext()
-	if err := n.Run(); err != nil {
-		log.Fatal(err)
-	}
+	go b.SendToNeighbours(ctx)
+	go b.Gossiper(ctx, GOSSIP_NODES_COUNT)
+
+	return b
 }
