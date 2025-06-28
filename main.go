@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	GOSSIP_FREQUENCY     = 2 * time.Second
+	GOSSIP_FREQUENCY     = 5 * time.Second
 	NEIGHBOURS_FREQUENCY = 50 * time.Millisecond
-	GOSSIP_NODES_COUNT   = 10
+	GOSSIP_NODES_COUNT   = 5
 )
 
 func main() {
