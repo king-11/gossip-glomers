@@ -6,6 +6,7 @@ import (
 	"gossip-glomers/broadcast"
 	"gossip-glomers/echo"
 	growonlycounter "gossip-glomers/grow-only-counter"
+	kafka "gossip-glomers/kafka"
 	uniqueidgeneration "gossip-glomers/unique-id-generation"
 	"log"
 	"time"
@@ -53,6 +54,43 @@ func main() {
 		}
 
 		return n.Reply(msg, gocs.Add(addMessage, ctx))
+	})
+
+	kafkaServer := kafka.NewKafkaSever()
+	n.Handle("send", func(msg maelstrom.Message) error {
+		sendMessage := new(kafka.SendMessage)
+		if err := json.Unmarshal(msg.Body, sendMessage); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, kafkaServer.Send(sendMessage))
+	})
+
+	n.Handle("poll", func(msg maelstrom.Message) error {
+		pollMessage := new(kafka.PollMessage)
+		if err := json.Unmarshal(msg.Body, pollMessage); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, kafkaServer.Poll(pollMessage))
+	})
+
+	n.Handle("commit_offsets", func(msg maelstrom.Message) error {
+		commitOffsets := new(kafka.CommitOffsets)
+		if err := json.Unmarshal(msg.Body, commitOffsets); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, kafkaServer.CommitOffsets(commitOffsets))
+	})
+
+	n.Handle("list_committed_offsets", func(msg maelstrom.Message) error {
+		listCommittedOffsets := new(kafka.ListCommittedOffsets)
+		if err := json.Unmarshal(msg.Body, listCommittedOffsets); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, kafkaServer.ListCommitedOffsets(listCommittedOffsets))
 	})
 
 	if err := n.Run(); err != nil {
