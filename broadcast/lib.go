@@ -88,7 +88,7 @@ func (s *BroadcastServer) getNeighbours() []string {
 		return []string{}
 	}
 
-	totalNodes := len(s.n.NodeIDs())
+	totalNodes := len(s.n.NodeIDs()) + 1
 	child1 := (2 * nodeNum) % totalNodes
 	child2 := (2*nodeNum + 1) % totalNodes
 	neighbours := []string{"n" + strconv.Itoa(child1), "n" + strconv.Itoa(child2)}
