@@ -1,16 +1,21 @@
 package kafka
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"testing"
+
+	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
 func TestKafkaSend(t *testing.T) {
-	kafkaServer := NewKafkaSever()
+	node := maelstrom.NewNode()
+	kafkaServer := NewKafkaSever(node)
 	sendMessage := SendMessage{MessageType: "send", Value: 11, Key: "luck"}
+	ctx := context.TODO()
 
-	reply := kafkaServer.Send(&sendMessage)
+	reply := kafkaServer.Send(&sendMessage, ctx)
 
 	if reply.MessageType != "send_ok" {
 		t.Errorf("expected reply of type 'send_ok' but was %s", reply.MessageType)
@@ -33,12 +38,14 @@ func TestKafkaSend(t *testing.T) {
 }
 
 func TestKafkaPoll(t *testing.T) {
-	kafkaServer := NewKafkaSever()
+	node := maelstrom.NewNode()
+	kafkaServer := NewKafkaSever(node)
 	kafkaServer.log["luck"] = []Message{NewMessage(0, 11), NewMessage(1, 12), NewMessage(2, 45)}
 	kafkaServer.log["prize"] = []Message{NewMessage(0, 1), NewMessage(1, 4)}
 	pollMessage := PollMessage{MessageType: "poll", Offsets: Offsets{"luck": 0, "prize": 1}}
+	ctx := context.TODO()
 
-	reply := kafkaServer.Poll(&pollMessage)
+	reply := kafkaServer.Poll(&pollMessage, ctx)
 
 	if reply.MessageType != "poll_ok" {
 		t.Errorf("incorrect message type of %s expected 'poll_ok'", reply.MessageType)
@@ -54,15 +61,17 @@ func TestKafkaPoll(t *testing.T) {
 }
 
 func TestKafkaCommitOffsets(t *testing.T) {
-	kafkaServer := NewKafkaSever()
+	node := maelstrom.NewNode()
+	kafkaServer := NewKafkaSever(node)
 	kafkaServer.log["luck"] = []Message{NewMessage(0, 11), NewMessage(1, 12), NewMessage(2, 45)}
 	kafkaServer.log["prize"] = []Message{NewMessage(0, 1), NewMessage(1, 4)}
 	commitOffsetsMessage := CommitOffsets{MessageType: "commit_offsets", Offsets: Offsets{
 		"luck":  2,
 		"prize": 1,
 	}}
+	ctx := context.TODO()
 
-	reply := kafkaServer.CommitOffsets(&commitOffsetsMessage)
+	reply := kafkaServer.CommitOffsets(&commitOffsetsMessage, ctx)
 
 	if reply.MessageType != "commit_offsets_ok" {
 		t.Errorf("expected message of type 'commit_offsets_ok' but was %s", reply.MessageType)
@@ -74,14 +83,16 @@ func TestKafkaCommitOffsets(t *testing.T) {
 }
 
 func TestListCommittedOffsets(t *testing.T) {
-	kafkaServer := NewKafkaSever()
+	node := maelstrom.NewNode()
+	kafkaServer := NewKafkaSever(node)
 	kafkaServer.log["luck"] = []Message{NewMessage(0, 11), NewMessage(1, 12), NewMessage(2, 45)}
 	kafkaServer.log["prize"] = []Message{NewMessage(0, 1), NewMessage(1, 4)}
 	kafkaServer.logOffset["luck"] = 2
 	kafkaServer.logOffset["prize"] = 1
 	listCommittedOffsets := ListCommittedOffsets{MessageType: "list_committed_offsets", Keys: []string{"luck", "nozzle", "prize"}}
+	ctx := context.TODO()
 
-	reply := kafkaServer.ListCommitedOffsets(&listCommittedOffsets)
+	reply := kafkaServer.ListCommitedOffsets(&listCommittedOffsets, ctx)
 
 	if reply.MessageType != "list_committed_offsets_ok" {
 		t.Errorf("expected message of type 'commit_offsets_ok' but was %s", reply.MessageType)

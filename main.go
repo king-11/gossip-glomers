@@ -56,14 +56,14 @@ func main() {
 		return n.Reply(msg, gocs.Add(addMessage, ctx))
 	})
 
-	kafkaServer := kafka.NewKafkaSever()
+	kafkaServer := kafka.NewKafkaSever(n)
 	n.Handle("send", func(msg maelstrom.Message) error {
 		sendMessage := new(kafka.SendMessage)
 		if err := json.Unmarshal(msg.Body, sendMessage); err != nil {
 			return err
 		}
 
-		return n.Reply(msg, kafkaServer.Send(sendMessage))
+		return n.Reply(msg, kafkaServer.Send(sendMessage, ctx))
 	})
 
 	n.Handle("poll", func(msg maelstrom.Message) error {
@@ -72,7 +72,7 @@ func main() {
 			return err
 		}
 
-		return n.Reply(msg, kafkaServer.Poll(pollMessage))
+		return n.Reply(msg, kafkaServer.Poll(pollMessage, ctx))
 	})
 
 	n.Handle("commit_offsets", func(msg maelstrom.Message) error {
@@ -81,7 +81,7 @@ func main() {
 			return err
 		}
 
-		return n.Reply(msg, kafkaServer.CommitOffsets(commitOffsets))
+		return n.Reply(msg, kafkaServer.CommitOffsets(commitOffsets, ctx))
 	})
 
 	n.Handle("list_committed_offsets", func(msg maelstrom.Message) error {
@@ -90,7 +90,7 @@ func main() {
 			return err
 		}
 
-		return n.Reply(msg, kafkaServer.ListCommitedOffsets(listCommittedOffsets))
+		return n.Reply(msg, kafkaServer.ListCommitedOffsets(listCommittedOffsets, ctx))
 	})
 
 	if err := n.Run(); err != nil {
