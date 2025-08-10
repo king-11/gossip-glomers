@@ -25,6 +25,8 @@ func NewKafkaSever(node *maelstrom.Node) *KafkaSever {
 	linKV := maelstrom.NewLinKV(node)
 	seqKV := maelstrom.NewSeqKV(node)
 	return &KafkaSever{
+		log:   make(map[string][]Message),
+		lock:  &sync.RWMutex{},
 		linKV: linKV,
 		seqKV: seqKV,
 		node:  node,
@@ -50,25 +52,18 @@ func (s *KafkaSever) Send(msg *SendMessage, ctx context.Context) SendMessageRepl
 		return msg.Reply(sendReply.Offset)
 	}
 
-	messages := make([]Message, 0, 1)
-	for {
-		err := s.linKV.ReadInto(ctx, msg.Key, &messages)
-		if err != nil && maelstrom.ErrorCode(err) != maelstrom.KeyDoesNotExist {
-			log.Printf("error while trying to read value of %s: %v", msg.Key, err)
-			return msg.Reply(-1)
-		}
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	messages := s.log[msg.Key]
+	if messages == nil {
+		messages = make([]Message, 0)
+	}
 
-		err = s.linKV.CompareAndSwap(ctx, msg.Key, messages, append(messages, NewMessage(len(messages), msg.Value)), true)
-		if err == nil {
-			return msg.Reply(len(messages))
-		}
-
-		if maelstrom.ErrorCode(err) == maelstrom.PreconditionFailed {
-			continue
-		}
-
-		log.Printf("failed to insert value %d to %s", msg.Value, msg.Key)
-		break
+	modifiedMessage := append(messages, NewMessage(len(messages), msg.Value))
+	err := s.linKV.CompareAndSwap(ctx, msg.Key, messages, modifiedMessage, true)
+	if err == nil {
+		s.log[msg.Key] = modifiedMessage
+		return msg.Reply(len(messages))
 	}
 
 	return msg.Reply(-1)
@@ -76,18 +71,22 @@ func (s *KafkaSever) Send(msg *SendMessage, ctx context.Context) SendMessageRepl
 
 func (s *KafkaSever) Poll(msg *PollMessage, ctx context.Context) PollMessageReply {
 	messages := make(map[string][]Message)
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	for key, offset := range msg.Offsets {
-		logMessages := make([]Message, 0, 1)
-		err := s.linKV.ReadInto(ctx, key, &logMessages)
+		logMessages, ok := s.log[key]
+		if !ok {
+			err := s.linKV.ReadInto(ctx, key, &logMessages)
 
-		if maelstrom.ErrorCode(err) == maelstrom.KeyDoesNotExist {
-			log.Printf("key: %s not found in logs", key)
-			continue
-		}
+			if maelstrom.ErrorCode(err) == maelstrom.KeyDoesNotExist {
+				log.Printf("key: %s not found in logs", key)
+				continue
+			}
 
-		if err != nil {
-			log.Printf("error occurred while fetching %s", key)
-			continue
+			if err != nil {
+				log.Printf("error occurred while fetching %s", key)
+				continue
+			}
 		}
 
 		if len(logMessages) < offset {

@@ -28,10 +28,11 @@ The implementation provides handlers for the four required RPCs, ensuring that t
 
 The `Send` method handles requests to append a message to a log using atomic compare-and-swap operations:
 
-1. Reads the current log messages from the linearizable KV store
+1. Reads the value for particular key from local store
 2. Uses `CompareAndSwap` to atomically append the new message with the correct offset
-3. Retries on precondition failures to handle concurrent writes
-4. Returns the assigned offset on success
+3. Returns the assigned offset on success and also updates our locally stored value
+4. Retries on precondition failures to handle concurrent writes
+5. Reads the current log messages from the linearizable KV store
 
 This approach ensures atomicity and prevents race conditions in a distributed environment.
 
@@ -43,10 +44,14 @@ This approach ensures atomicity and prevents race conditions in a distributed en
 
 The `Poll` method retrieves messages from distributed storage:
 
-1. For each requested log key, reads the message array from the linearizable KV store
+1. For each requested log key, reads the message array from the local store if available or else read from the linearizable KV store
 2. Returns messages starting from the specified offset
 3. Handles missing keys gracefully by skipping them
 4. Provides consistent reads across the distributed system
+
+>[!NOTE]
+>
+>We don't update our local store values for keys that are missing because they are the ones not owned by the node hence its better to fetch them everytime for update.
 
 ### `CommitOffsets`
 
