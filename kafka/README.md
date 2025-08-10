@@ -18,7 +18,7 @@ type KafkaSever struct {
 
 -   `linKV *maelstrom.KV`: A linearizable key-value store used for storing log messages. This provides strong consistency guarantees across the distributed system.
 -   `seqKV *maelstrom.KV`: A sequentially consistent key-value store used for tracking committed offsets. This allows for efficient offset management while maintaining consistency.
--   The in-memory fields (`log`, `logOffset`, `lock`) are no longer used in the current implementation but remain for backward compatibility with tests.
+- The in-memory fields `log` and `lock` are used for storing local states of keys that we are responsible for updating. `logOffset` is just for making the previously used [tests](./lib_test.go) for single node pass the build
 
 ## RPC Handlers
 
@@ -34,6 +34,10 @@ The `Send` method handles requests to append a message to a log using atomic com
 4. Returns the assigned offset on success
 
 This approach ensures atomicity and prevents race conditions in a distributed environment.
+
+>[!NOTE]
+>
+>We shard the keys so if node isn't the parent of that particular key we forward the message to its parent node and await its response which we then reply back to the client. This ensures less contention on the keys as every key is handled by one node so no chance of failure.
 
 ### `Poll`
 

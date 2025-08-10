@@ -2,8 +2,10 @@ package kafka
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
+	"strconv"
 	"sync"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
@@ -15,6 +17,7 @@ type KafkaSever struct {
 	lock      *sync.RWMutex
 	linKV     *maelstrom.KV
 	seqKV     *maelstrom.KV
+	node      *maelstrom.Node
 }
 
 func NewKafkaSever(node *maelstrom.Node) *KafkaSever {
@@ -24,10 +27,29 @@ func NewKafkaSever(node *maelstrom.Node) *KafkaSever {
 	return &KafkaSever{
 		linKV: linKV,
 		seqKV: seqKV,
+		node:  node,
 	}
 }
 
 func (s *KafkaSever) Send(msg *SendMessage, ctx context.Context) SendMessageReply {
+	key, _ := strconv.Atoi(msg.Key)
+	targetNode := s.node.NodeIDs()[key%len(s.node.NodeIDs())]
+	if s.node.ID() != targetNode {
+		reply, err := s.node.SyncRPC(ctx, targetNode, msg)
+		if err != nil {
+			log.Printf("failed sending send message %v to %s", msg, targetNode)
+			return msg.Reply(-1)
+		}
+
+		sendReply := new(SendMessageReply)
+		if err := json.Unmarshal(reply.Body, sendReply); err != nil {
+			log.Printf("failed to unmarshal message: %v", err)
+			return msg.Reply(-1)
+		}
+
+		return msg.Reply(sendReply.Offset)
+	}
+
 	messages := make([]Message, 0, 1)
 	for {
 		err := s.linKV.ReadInto(ctx, msg.Key, &messages)
