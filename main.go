@@ -56,6 +56,14 @@ func main() {
 		return n.Reply(msg, gocs.Add(addMessage, ctx))
 	})
 
+	// k := KafkaNodeSetup(n, ctx)
+
+	if err := n.Run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func KafkaNodeSetup(n *maelstrom.Node, ctx context.Context) *kafka.KafkaSever {
 	kafkaServer := kafka.NewKafkaSever(n)
 	n.Handle("send", func(msg maelstrom.Message) error {
 		sendMessage := new(kafka.SendMessage)
@@ -93,9 +101,7 @@ func main() {
 		return n.Reply(msg, kafkaServer.ListCommitedOffsets(listCommittedOffsets, ctx))
 	})
 
-	if err := n.Run(); err != nil {
-		log.Fatal(err)
-	}
+	return kafkaServer
 }
 
 func BroadCastServerSetup(n *maelstrom.Node, ctx context.Context) broadcast.BroadcastServer {
