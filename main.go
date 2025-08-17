@@ -7,6 +7,7 @@ import (
 	"gossip-glomers/echo"
 	growonlycounter "gossip-glomers/grow-only-counter"
 	kafka "gossip-glomers/kafka"
+	totallyavailable "gossip-glomers/totally-available"
 	uniqueidgeneration "gossip-glomers/unique-id-generation"
 	"log"
 	"time"
@@ -57,6 +58,16 @@ func main() {
 	})
 
 	// k := KafkaNodeSetup(n, ctx)
+
+	ta := totallyavailable.NewTotallyAvailableNode(n)
+	n.Handle("txn", func(msg maelstrom.Message) error {
+		txnMessage := new(totallyavailable.TxnRequest)
+		if err := json.Unmarshal(msg.Body, txnMessage); err != nil {
+			return err
+		}
+
+		return n.Reply(msg, ta.Transaction(txnMessage))
+	})
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)
