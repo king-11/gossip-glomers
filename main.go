@@ -62,6 +62,7 @@ func main() {
 	// k := KafkaNodeSetup(n, ctx)
 
 	ta := totallyavailable.NewTotallyAvailableNode(n)
+	go ta.WriteServer(ctx)
 	n.Handle("txn", func(msg maelstrom.Message) error {
 		txnMessage := new(totallyavailable.TxnRequest)
 		if err := json.Unmarshal(msg.Body, txnMessage); err != nil {
@@ -69,6 +70,16 @@ func main() {
 		}
 
 		return n.Reply(msg, ta.Transaction(txnMessage))
+	})
+
+	n.Handle("write", func(msg maelstrom.Message) error {
+		writeMessage := new(totallyavailable.WriteMessage)
+		if err := json.Unmarshal(msg.Body, writeMessage); err != nil {
+			return err
+		}
+
+		ta.Write(writeMessage.Requests)
+		return nil
 	})
 
 	if err := n.Run(); err != nil {

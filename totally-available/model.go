@@ -1,5 +1,7 @@
 package totallyavailable
 
+import "time"
+
 type Operation = [3]any
 
 func OperationResult(kind string, key int, value any) Operation {
@@ -44,4 +46,23 @@ type TxnReply struct {
 	MessageId  uint        `json:"msg_id"`
 	InReplyTo  uint        `json:"in_reply_to"`
 	Operations []Operation `json:"txn"`
+}
+
+type WriteMessage struct {
+	MessageType string            `json:"type"`
+	Requests    []WriteKeyRequest `json:"requests"`
+}
+
+type WriteKeyRequest struct {
+	Key       int  `json:"key"`
+	Value     int  `json:"value"`
+	Timestamp uint `json:"timestamp"`
+}
+
+func NewWriteKeyRequest(key int, value int) WriteKeyRequest {
+	return WriteKeyRequest{
+		Key:       key,
+		Value:     value,
+		Timestamp: uint(time.Now().Unix()),
+	}
 }
