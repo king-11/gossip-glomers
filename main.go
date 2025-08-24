@@ -10,6 +10,8 @@ import (
 	totallyavailable "gossip-glomers/totally-available"
 	uniqueidgeneration "gossip-glomers/unique-id-generation"
 	"log"
+	"os"
+	"os/signal"
 	"time"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
@@ -33,7 +35,7 @@ func main() {
 		return s.HandleMessage(msg)
 	})
 
-	ctx, cancelContext := context.WithCancel(context.Background())
+	ctx, cancelContext := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancelContext()
 	// b := BroadCastServerSetup(n, ctx)
 	// defer b.Stop()

@@ -156,8 +156,6 @@ func (s *BroadcastServer) SendToNeighbours(context context.Context) {
 	defer neighboursTicker.Stop()
 
 	messageBatch := make([]int, 0, 10)
-	messageBatchLock := &sync.Mutex{}
-
 	for {
 		select {
 		case <-context.Done():
@@ -166,13 +164,10 @@ func (s *BroadcastServer) SendToNeighbours(context context.Context) {
 			if !ok {
 				break
 			}
-			messageBatchLock.Lock()
 			messageBatch = append(messageBatch, message.int)
 			log.Printf("%s: received message %d from %s", s.n.ID(), message.int, message.string)
-			messageBatchLock.Unlock()
 		case <-neighboursTicker.C:
 			wg := &sync.WaitGroup{}
-			messageBatchLock.Lock()
 			for _, node := range s.neighbours {
 				wg.Add(1)
 				go func(node string, wg *sync.WaitGroup, messages []int) {
@@ -183,7 +178,6 @@ func (s *BroadcastServer) SendToNeighbours(context context.Context) {
 				wg.Wait()
 			}
 			messageBatch = make([]int, 0, 10)
-			messageBatchLock.Unlock()
 		}
 	}
 }
