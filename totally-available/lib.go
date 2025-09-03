@@ -59,42 +59,68 @@ func (ta *TotallyAvailableNode) performRead(key int) Operation {
 	return OperationResult("r", key, value)
 }
 
-func (ta *TotallyAvailableNode) lockKeys(writeKeys []int) []*sync.RWMutex {
-	slices.Sort(writeKeys)
-	writeKeys = slices.Compact(writeKeys)
-	locked := make([]*sync.RWMutex, 0, len(writeKeys))
-	for _, k := range writeKeys {
+func (ta *TotallyAvailableNode) lockKeys(keys []int, isRead bool) []*sync.RWMutex {
+	slices.Sort(keys)
+	keys = slices.Compact(keys)
+	locked := make([]*sync.RWMutex, 0, len(keys))
+	for _, k := range keys {
 		l := ta.lockForKey(k)
-		l.Lock()
+		if isRead {
+			l.RLock()
+		} else {
+			l.Lock()
+		}
+
 		locked = append(locked, l)
-		log.Printf("acquired write lock for key:%d", k)
+		log.Printf("acquired lock for key:%d", k)
 	}
 
 	return locked
 }
 
-func (ta *TotallyAvailableNode) unlockLocks(locks []*sync.RWMutex, writeKeys []int) {
+func (ta *TotallyAvailableNode) unlockLocks(locks []*sync.RWMutex, keys []int, areReadLocks bool) {
 	for idx, lock := range locks {
-		lock.Unlock()
-		log.Printf("key:%d unlocked", writeKeys[idx])
+		if areReadLocks {
+			lock.RUnlock()
+		} else {
+			lock.Unlock()
+		}
+
+		log.Printf("key:%d unlocked", keys[idx])
 	}
 }
 
 func (ta *TotallyAvailableNode) Transaction(msg *TxnRequest) TxnReply {
 	writeKeysSet := make(map[int]struct{})
+	readKeysSet := make(map[int]struct{})
 	for _, op := range msg.Operations {
 		if IsWrite(op) {
 			writeKeysSet[GetKey(op)] = struct{}{}
 		}
 	}
 
+	for _, op := range msg.Operations {
+		key := GetKey(op)
+		if _, ok := writeKeysSet[key]; ok {
+			continue
+		}
+
+		readKeysSet[key] = struct{}{}
+	}
+
+	readKeys := make([]int, 0, len(readKeysSet))
+	for k := range readKeysSet {
+		readKeys = append(readKeys, k)
+	}
+	readLocks := ta.lockKeys(readKeys, true)
+	defer ta.unlockLocks(readLocks, readKeys, true)
+
 	writeKeys := make([]int, 0, len(writeKeysSet))
 	for k := range writeKeysSet {
 		writeKeys = append(writeKeys, k)
 	}
-
-	locks := ta.lockKeys(writeKeys)
-	defer ta.unlockLocks(locks, writeKeys)
+	writeLocks := ta.lockKeys(writeKeys, false)
+	defer ta.unlockLocks(writeLocks, writeKeys, false)
 
 	results := make([]Operation, len(msg.Operations))
 	for idx, op := range msg.Operations {
@@ -159,8 +185,8 @@ func (ta *TotallyAvailableNode) Write(requests []WriteKeyRequest) {
 		writeKeys[idx] = req.Key
 	}
 
-	locks := ta.lockKeys(writeKeys)
-	defer ta.unlockLocks(locks, writeKeys)
+	locks := ta.lockKeys(writeKeys, false)
+	defer ta.unlockLocks(locks, writeKeys, false)
 
 	for _, req := range requests {
 		lastWrite, loaded := ta.lastWrite.LoadOrStore(req.Key, req.Timestamp)

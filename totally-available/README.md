@@ -1,8 +1,9 @@
 # Totally Avaible Key Value Store
 
 We are required to build a totally available key value store. The checks that maelstrom does for this are:
-- Nodes are always available, `net-timeout` on operation count as being unavailable.
+- Nodes are always available, `net-timeout` and `fail` on transaction count as being unavailable.
 - Follows [Read Uncommitted](#read-uncommitted) consistency model
+- Follows [Read Committed](#read-committed) consistency model
 
 ## Messages
 
@@ -26,6 +27,7 @@ The totally available key-value store uses the following architecture:
 - **requestChannel**: Buffered channel to queue write operations for asynchronous replication
 
 ### Transaction Processing (`Transaction` method)
+1. **Read Lock Acquisition**: Collects all the read only keys, sorts them and acquires read locks in order.
 1. **Write Lock Acquisition**: Collects all keys that will be written in the transaction, sorts them (to prevent deadlocks), and acquires write locks in order
 2. **Operation Execution**: Processes each operation sequentially:
    - **Write operations**: Updates the key-value store and queues the write for replication
@@ -52,7 +54,8 @@ When receiving replicated writes from other nodes:
 
 ## Read Uncommitted
 
-Read Uncommitted is an incredibly weak consistency model. It prohibits only a single anomaly:
+Read Uncommitted is an incredibly weak consistency model. It prohibits only a single anomaly
+
 >G0 (dirty write): a cycle of transactions linked by write-write dependencies. For instance, transaction T1 appends 1 to key x, transaction T2 appends 2 to x, and T1 appends 3 to x again, producing the value [1, 2, 3].
 
 Note that read uncommitted does not impose any real-time constraints. If process A completes write w, then process B begins a read r, r is not necessarily guaranteed to observe w.
@@ -63,6 +66,27 @@ For instance, a read uncommmitted database can always return the empty state for
 
 >[!note] Malestrom can't check for dirty writes.
 
+## Read Committed
+
+Read committed is a consistency model which strengthens read uncommitted by preventing dirty reads: transactions are not allowed to observe writes from transactions which do not commit.
+
+In this model, read committed prohibits:
+- P0 (Dirty Write): w1(x) … w2(x)
+- P1 (Dirty Read): w1(x) … r2(x)
+
+but allows
+- P2 (Fuzzy Read): r1(x) … w2(x)
+- P3 (Phantom): r1(P) … w2(y in P)
+
+>`P` indicates a predicate.
+
+In terms of naming these:
+- G1a (aborted read): read of a value written by an aborted transaction
+- G1b (intermediate read): read of a value written by a transaction still in progress different from its final write
+- G1c (circular information flow): two concurrently executing transactions see each others writes.
+
+Apart from above it is unconstrainted similar to [read uncommitted](#read-uncommitted) in terms of durability of writes and orderings.
+
 ## Learning
 
 I gave a lot of thought for how replication for read uncommitted should work to provide a totally available behaviour. First thoughts about use of two phase locks won't work in case of a partition.
@@ -72,3 +96,7 @@ Then I kept pondering over the idea that dirty writes can happen across nodes wh
 The replication strategy I used was always take the latest value written by any client because it is simple and it makes sense in a lot of senarios. This is taken from the gossip protocol strategy which works really well given we don't have strong convergence requirements.
 
 A critical thing where I encountered a lot of `net-timeout` causing the validation to fail was because of deadlocks. Given, I try to get all the keys that read write lock at once. Using ordered locking helps here and also ensuring not to ask for the same lock twice for multiple operation concerning the same key.
+
+Initially for `read-committed` I tried using abort on conflict mechanism. In case we aren't able to acquire lock for any one of the key then we just abort the transaction assuming that maelstrom client will retry. But maelstrom doesn't like aborts and counts it as unavailability of system.
+
+I also thought about using snapshot isolation but that is just too complex a mechanism for our simple use case. Given we get the complete transaction at once, we can acquire all necessary locks and perform the transaction quickly.

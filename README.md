@@ -28,4 +28,4 @@ Even the best developers in the world can be brought to their knees in the face 
 |[5c](https://fly.io/dist-sys/5c/) |Efficient Kafka-Style Log |🌟 |
 |[6a](https://fly.io/dist-sys/6a/) |Single-Node, Totally-Available Transactions |🌟 |
 |[6b](https://fly.io/dist-sys/6b/) |Totally-Available, Read Uncommitted Transactions |🌟 |
-|[6c](https://fly.io/dist-sys/6c/) |Totally-Available, Read Committed Transactions | |
+|[6c](https://fly.io/dist-sys/6c/) |Totally-Available, Read Committed Transactions |🌟 |
