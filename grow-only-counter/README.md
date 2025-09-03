@@ -44,6 +44,6 @@ The only failure I encountered was missing out that the key might not be present
 
 So running the workload multiple time I encountered an error which made by understanding for Sequential KV better. The check that workload does is last read should have the latest value of counter everything should have converged at this point. But the reads from a `SeqKV` can return stale values.
 
-To counteract that the [suggestion](https://github.com/jepsen-io/maelstrom/issues/39#issuecomment-1445414521) was to perform write of a unique key which creates a new state of `SeqKV` that can't exist until all the writes before it are completed. This ensures all our writes get the latest data. The other suggestion was to do multiple of these operations which probablistically ensures that we would get the latest value at some point of time.
+To counteract that the [suggestion](https://github.com/jepsen-io/maelstrom/issues/39#issuecomment-1445414521) was to perform write of a unique key which creates a new state of `SeqKV` that can't exist until all the writes before it are completed. This ensures all our reads get the latest data. The other suggestion was to do multiple read operations which probablistically ensures that we would get the latest value at some point of time.
 
 There was also try to use [identity CAS](https://github.com/jepsen-io/maelstrom/issues/39#issuecomment-1445195514) for freshness but a CAS operation can also be stale that doesn't make things fresh as CAS can be reordered to some point in time.
