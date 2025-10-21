@@ -35,7 +35,7 @@ func (s *UniqueIdServer) HandleMessage(m maelstrom.Message) error {
 		return err
 	}
 
-	return s.n.Reply(m, receivedMessage.Reply(uniqueId))
+	return s.n.Reply(m, receivedMessage.Reply(strconv.FormatUint(uniqueId, 10)))
 }
 
 func (s *UniqueIdServer) GenerateUniqueId(src string, dest string) (uint64, error) {

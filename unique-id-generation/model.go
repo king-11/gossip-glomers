@@ -6,12 +6,12 @@ type UniqueIdMessage struct {
 
 type UniqueIdMessageReply struct {
 	MessageType string `json:"type"`
-	Id uint64 `json:"id"`
+	Id          string `json:"id"`
 }
 
-func (m *UniqueIdMessage) Reply(id uint64) UniqueIdMessageReply {
+func (m *UniqueIdMessage) Reply(id string) UniqueIdMessageReply {
 	return UniqueIdMessageReply{
 		MessageType: "generate_ok",
-		Id: id,
+		Id:          id,
 	}
 }
